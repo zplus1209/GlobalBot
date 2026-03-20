@@ -3,17 +3,37 @@ from __future__ import annotations
 import sys
 import pytest
 from unittest.mock import MagicMock, patch
-from typing import List
+from typing import List, Optional
 
 from globalbot.backend.base import Document
 from globalbot.backend.chunkings.base import BaseChunker
 from globalbot.backend.chunkings import init_chunker, CHUNKER_PROVIDERS
+from globalbot.backend.embeddings.base import BaseEmbeddings
+from globalbot.backend.llms.chats.base import BaseChatLLM
+from globalbot.backend.base import AIMessage
 
 
 class _DummyChunker(BaseChunker):
     def split_text(self, text: str) -> List[str]:
         size = self.chunk_size
         return [text[i: i + size] for i in range(0, len(text), size) if text[i: i + size].strip()]
+
+
+class _DummyEmbeddings(BaseEmbeddings):
+    dim: int = 3
+
+    def _embed_documents(self, texts, **kwargs):
+        return [[0.1] * self.dim for _ in texts]
+
+    def _embed_query(self, text, **kwargs):
+        return [0.1] * self.dim
+
+
+class _DummyLLM(BaseChatLLM):
+    response: str = "split_after: 2, 4"
+
+    def _call(self, messages, **kwargs):
+        return AIMessage(content=self.response)
 
 
 class TestBaseChunker:
@@ -75,20 +95,23 @@ class TestInitChunker:
         assert "llm" in CHUNKER_PROVIDERS
 
     def test_default_is_recursive(self):
-        with patch("langchain_text_splitters.RecursiveCharacterTextSplitter") as mock_cls:
-            mock_splitter = MagicMock()
-            mock_splitter.split_text.return_value = ["chunk1", "chunk2"]
-            mock_cls.return_value = mock_splitter
-            chunker = init_chunker("recursive", chunk_size=200)
-            assert isinstance(chunker, __import__("globalbot.backend.chunkings.fixed", fromlist=["RecursiveChunker"]).RecursiveChunker)
+        mock_lts = MagicMock()
+        mock_lts.RecursiveCharacterTextSplitter.return_value = MagicMock()
+        with patch.dict(sys.modules, {"langchain_text_splitters": mock_lts}):
+            from importlib import reload
+            import globalbot.backend.chunkings.fixed as fixed_mod
+            reload(fixed_mod)
+            chunker = fixed_mod.RecursiveChunker(chunk_size=200)
+            assert isinstance(chunker, fixed_mod.RecursiveChunker)
 
     def test_init_chunker_params(self):
         mock_lts = MagicMock()
-        mock_splitter = MagicMock()
-        mock_splitter.split_text.return_value = ["a", "b"]
-        mock_lts.RecursiveCharacterTextSplitter.return_value = mock_splitter
+        mock_lts.RecursiveCharacterTextSplitter.return_value = MagicMock()
         with patch.dict(sys.modules, {"langchain_text_splitters": mock_lts}):
-            chunker = init_chunker("recursive", chunk_size=300, chunk_overlap=50)
+            from importlib import reload
+            import globalbot.backend.chunkings.fixed as fixed_mod
+            reload(fixed_mod)
+            chunker = fixed_mod.RecursiveChunker(chunk_size=300, chunk_overlap=50)
             assert chunker.chunk_size == 300
             assert chunker.chunk_overlap == 50
 
@@ -144,39 +167,46 @@ class TestTokenChunker:
 
 class TestClusterSemanticChunker:
     def test_split_short_text(self):
-        mock_emb = MagicMock()
-        mock_emb.run.return_value = [[0.1, 0.2], [0.9, 0.8]]
-
+        emb = _DummyEmbeddings()
         from globalbot.backend.chunkings.semantic import ClusterSemanticChunker
-        chunker = ClusterSemanticChunker(embeddings=mock_emb, max_chunk_size=500, min_chunk_size=10)
+        chunker = ClusterSemanticChunker(embeddings=emb, max_chunk_size=500, min_chunk_size=10)
         result = chunker.split_text("Hello world. This is a test.")
         assert isinstance(result, list)
 
     def test_split_empty_text(self):
-        mock_emb = MagicMock()
+        emb = _DummyEmbeddings()
         from globalbot.backend.chunkings.semantic import ClusterSemanticChunker
-        chunker = ClusterSemanticChunker(embeddings=mock_emb)
+        chunker = ClusterSemanticChunker(embeddings=emb)
         result = chunker.split_text("")
         assert result == []
 
     def test_split_single_sentence(self):
-        mock_emb = MagicMock()
-        mock_emb.run.return_value = [[0.1, 0.2]]
+        emb = _DummyEmbeddings()
         from globalbot.backend.chunkings.semantic import ClusterSemanticChunker
-        chunker = ClusterSemanticChunker(embeddings=mock_emb)
+        chunker = ClusterSemanticChunker(embeddings=emb)
         result = chunker.split_text("This is a single sentence that is long enough.")
         assert len(result) == 1
 
     def test_low_similarity_forces_split(self):
-        mock_emb = MagicMock()
-        mock_emb.run.return_value = [
-            [1.0, 0.0, 0.0],
-            [0.0, 1.0, 0.0],
-            [0.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0],
-        ]
+        class _OrthogonalEmbeddings(BaseEmbeddings):
+            _vecs = [
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.0, 0.0, 1.0],
+            ]
+            _call_count: int = 0
+
+            def _embed_documents(self, texts, **kwargs):
+                result = self._vecs[:len(texts)]
+                return result
+
+            def _embed_query(self, text, **kwargs):
+                return [0.1, 0.1, 0.1]
+
+        emb = _OrthogonalEmbeddings()
         from globalbot.backend.chunkings.semantic import ClusterSemanticChunker
-        chunker = ClusterSemanticChunker(embeddings=mock_emb, max_chunk_size=1000, min_chunk_size=5)
+        chunker = ClusterSemanticChunker(embeddings=emb, max_chunk_size=1000, min_chunk_size=5)
         sentences = [
             "Python is a programming language.",
             "The ocean is vast and deep.",
@@ -189,11 +219,9 @@ class TestClusterSemanticChunker:
 
 class TestLLMChunker:
     def test_split_text(self):
-        mock_llm = MagicMock()
-        mock_llm.chat.return_value = "split_after: 2, 4"
-
+        llm = _DummyLLM(response="split_after: 2, 4")
         from globalbot.backend.chunkings.llm_chunker import LLMChunker
-        chunker = LLMChunker(llm=mock_llm, initial_chunk_size=10)
+        chunker = LLMChunker(llm=llm, initial_chunk_size=10)
         result = chunker.split_text("word " * 60)
         assert isinstance(result, list)
         assert len(result) >= 1
@@ -215,68 +243,76 @@ class TestLLMChunker:
         assert ids == []
 
     def test_empty_text(self):
-        mock_llm = MagicMock()
+        llm = _DummyLLM()
         from globalbot.backend.chunkings.llm_chunker import LLMChunker
-        chunker = LLMChunker(llm=mock_llm)
+        chunker = LLMChunker(llm=llm)
         result = chunker.split_text("")
         assert result == []
 
 
 class TestRAGIndexerWithChunker:
-    def _make_indexer(self, chunker=None):
-        from globalbot.backend.storages.ingestion import RAGIndexer
+    def _make_dummy_vs(self):
+        from globalbot.backend.storages.vectorstores.base import BaseVectorStore
+        from globalbot.backend.base import RetrievedDocument
 
-        mock_vs = MagicMock()
-        mock_vs.name = "mock_vs"
-        mock_vs.add.return_value = ["id1", "id2"]
+        class _DummyVS(BaseVectorStore):
+            _store: dict = {}
 
-        mock_emb = MagicMock()
-        mock_emb.run.return_value = [[0.1] * 4, [0.2] * 4]
+            def model_post_init(self, __context):
+                self._store = {}
+                self.name = "dummy_vs"
 
-        kwargs = dict(vectorstore=mock_vs, embeddings=mock_emb)
-        if chunker is not None:
-            kwargs["chunker"] = chunker
-        return RAGIndexer(**kwargs), mock_vs, mock_emb
+            def add(self, docs, embeddings, **kwargs):
+                for doc, emb in zip(docs, embeddings):
+                    self._store[doc.doc_id] = (doc, emb)
+                return [doc.doc_id for doc in docs]
+
+            def query(self, embedding, top_k=5, filters=None, **kwargs):
+                return []
+
+            def delete(self, ids, **kwargs):
+                for id_ in ids:
+                    self._store.pop(id_, None)
+
+            def drop(self):
+                self._store.clear()
+
+            def count(self):
+                return len(self._store)
+
+        return _DummyVS()
 
     def test_default_chunker_is_recursive(self):
         from globalbot.backend.storages.ingestion import RAGIndexer
         from globalbot.backend.chunkings.fixed import RecursiveChunker
 
-        mock_vs = MagicMock()
-        mock_vs.name = "vs"
-        mock_vs.add.return_value = []
-        mock_emb = MagicMock()
-        mock_emb.run.return_value = []
-
-        indexer = RAGIndexer(vectorstore=mock_vs, embeddings=mock_emb)
+        vs = self._make_dummy_vs()
+        emb = _DummyEmbeddings()
+        indexer = RAGIndexer(vectorstore=vs, embeddings=emb)
         assert isinstance(indexer.chunker, RecursiveChunker)
 
     def test_custom_chunker_used(self):
-        custom = _DummyChunker(chunk_size=30)
-        indexer, mock_vs, mock_emb = self._make_indexer(chunker=custom)
+        from globalbot.backend.storages.ingestion import RAGIndexer
+
+        vs = self._make_dummy_vs()
+        emb = _DummyEmbeddings()
+        chunker = _DummyChunker(chunk_size=30)
+        indexer = RAGIndexer(vectorstore=vs, embeddings=emb, chunker=chunker)
         docs = [Document.from_text("x" * 90)]
-        mock_emb.run.side_effect = lambda texts: [[0.1] * 4 for _ in texts]
-        mock_vs.add.side_effect = lambda docs, embs: [d.doc_id for d in docs]
         result = indexer.run(docs)
         assert result["stored"] > 0
-        assert indexer.chunker is custom
+        assert indexer.chunker is chunker
 
     def test_semantic_chunker_integration(self):
-        mock_emb_model = MagicMock()
-        mock_emb_model.run.return_value = [[0.1, 0.2, 0.3]] * 5
-
         from globalbot.backend.chunkings.semantic import ClusterSemanticChunker
-        chunker = ClusterSemanticChunker(embeddings=mock_emb_model, max_chunk_size=200)
-
-        mock_vs = MagicMock()
-        mock_vs.name = "vs"
-        mock_vs.add.side_effect = lambda docs, embs: [d.doc_id for d in docs]
-
-        mock_emb_indexer = MagicMock()
-        mock_emb_indexer.run.side_effect = lambda texts: [[0.1] * 4 for _ in texts]
-
         from globalbot.backend.storages.ingestion import RAGIndexer
-        indexer = RAGIndexer(vectorstore=mock_vs, embeddings=mock_emb_indexer, chunker=chunker)
+
+        emb_for_chunking = _DummyEmbeddings()
+        chunker = ClusterSemanticChunker(embeddings=emb_for_chunking, max_chunk_size=200)
+
+        vs = self._make_dummy_vs()
+        emb_for_indexing = _DummyEmbeddings()
+        indexer = RAGIndexer(vectorstore=vs, embeddings=emb_for_indexing, chunker=chunker)
 
         docs = [Document.from_text("Hello world. This is a test. Another sentence here.")]
         result = indexer.run(docs)

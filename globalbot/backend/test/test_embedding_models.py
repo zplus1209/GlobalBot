@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import sys
 from unittest.mock import MagicMock, patch
 
 from globalbot.backend.embeddings import init_embedding_model, ONLINE_PROVIDERS, OFFLINE_PROVIDERS
@@ -67,25 +68,24 @@ class TestInitEmbeddingModel:
         assert "hf" in OFFLINE_PROVIDERS
         assert "fastembed" in OFFLINE_PROVIDERS
 
-    @patch("globalbot.backend.embeddings.openai.OpenAI")
+    @patch("globalbot.backend.embeddings.openai_impl.OpenAI")
     def test_init_openai(self, mock_openai):
         mock_openai.return_value = MagicMock()
         emb = init_embedding_model("openai", api_key="test-key", model="text-embedding-3-small")
         assert "openai" in emb.name
 
     def test_init_openai_with_langchain(self):
-        import sys
         mock_lc_cls = MagicMock()
         mock_lc_cls.return_value = MagicMock()
         mock_langchain_openai = MagicMock()
-        mock_langchain_openai.ChatOpenAI = mock_lc_cls
+        mock_langchain_openai.OpenAIEmbeddings = mock_lc_cls
 
         with patch.dict(sys.modules, {"langchain_openai": mock_langchain_openai}):
             from importlib import reload
-            import globalbot.backend.llms.chats.langchain_based as lb_mod
+            import globalbot.backend.embeddings.langchain_based as lb_mod
             reload(lb_mod)
-            llm = lb_mod.LCChatOpenAI(api_key="key", model="gpt-4o-mini")
-            assert "lc/openai" in llm.name
+            emb = lb_mod.LCOpenAIEmbeddings(api_key="key")
+            assert "lc/openai" in emb.name
 
     def test_init_ollama(self):
         emb = init_embedding_model("ollama", model="nomic-embed-text")
@@ -93,7 +93,7 @@ class TestInitEmbeddingModel:
 
 
 class TestOpenAIEmbeddings:
-    @patch("globalbot.backend.embeddings.openai.OpenAI")
+    @patch("globalbot.backend.embeddings.openai_impl.OpenAI")
     def test_embed_documents(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
@@ -101,13 +101,13 @@ class TestOpenAIEmbeddings:
         mock_response.data = [MagicMock(embedding=[0.1, 0.2, 0.3]), MagicMock(embedding=[0.4, 0.5, 0.6])]
         mock_client.embeddings.create.return_value = mock_response
 
-        from git.GlobalBot.globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
+        from globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
         emb = OpenAIEmbeddings(api_key="test")
         result = emb.run(["text1", "text2"])
         assert len(result) == 2
         assert result[0] == [0.1, 0.2, 0.3]
 
-    @patch("globalbot.backend.embeddings.openai.OpenAI")
+    @patch("globalbot.backend.embeddings.openai_impl.OpenAI")
     def test_embed_query(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
@@ -115,12 +115,12 @@ class TestOpenAIEmbeddings:
         mock_response.data = [MagicMock(embedding=[0.1, 0.2, 0.3])]
         mock_client.embeddings.create.return_value = mock_response
 
-        from git.GlobalBot.globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
+        from globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
         emb = OpenAIEmbeddings(api_key="test")
         result = emb.embed_query("hello")
         assert result == [0.1, 0.2, 0.3]
 
-    @patch("globalbot.backend.embeddings.openai.OpenAI")
+    @patch("globalbot.backend.embeddings.openai_impl.OpenAI")
     def test_dimensions_param(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
@@ -128,7 +128,7 @@ class TestOpenAIEmbeddings:
         mock_response.data = [MagicMock(embedding=[0.1, 0.2])]
         mock_client.embeddings.create.return_value = mock_response
 
-        from git.GlobalBot.globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
+        from globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
         emb = OpenAIEmbeddings(api_key="test", dimensions=512)
         emb.embed_query("hello")
         call_kwargs = mock_client.embeddings.create.call_args[1]
@@ -137,7 +137,6 @@ class TestOpenAIEmbeddings:
 
 class TestFastEmbedEmbeddings:
     def test_embed_documents(self):
-        import sys
         import numpy as np
         mock_instance = MagicMock()
         mock_instance.embed.return_value = iter([np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6])])
@@ -154,7 +153,6 @@ class TestFastEmbedEmbeddings:
         assert len(result[0]) == 3
 
     def test_embed_query(self):
-        import sys
         import numpy as np
         mock_instance = MagicMock()
         mock_instance.embed.return_value = iter([np.array([0.1, 0.2, 0.3])])

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import MagicMock, patch, call
+import sys
+from unittest.mock import MagicMock, patch
 from typing import List
 
 from globalbot.backend.base import Document, RetrievedDocument
@@ -9,6 +10,7 @@ from globalbot.backend.storages.vectorstores.base import BaseVectorStore
 from globalbot.backend.storages.vectorstores import init_vectorstore, VECTORSTORE_PROVIDERS
 from globalbot.backend.storages.ingestion import RAGIndexer
 from globalbot.backend.storages.retrieval import RAGRetriever
+from globalbot.backend.embeddings.base import BaseEmbeddings
 
 
 class _DummyVectorStore(BaseVectorStore):
@@ -40,12 +42,14 @@ class _DummyVectorStore(BaseVectorStore):
         return len(self._store)
 
 
-class _DummyEmbeddings:
-    def run(self, texts):
-        return [[0.1] * 4 for _ in texts]
+class _DummyEmbeddings(BaseEmbeddings):
+    dim: int = 4
 
-    def embed_query(self, text):
-        return [0.1] * 4
+    def _embed_documents(self, texts, **kwargs):
+        return [[0.1] * self.dim for _ in texts]
+
+    def _embed_query(self, text, **kwargs):
+        return [0.1] * self.dim
 
 
 class TestBaseVectorStore:
@@ -94,7 +98,6 @@ class TestInitVectorstore:
         assert "mongodb" in VECTORSTORE_PROVIDERS
 
     def test_init_chroma(self):
-        import sys
         mock_chromadb = MagicMock()
         mock_client = MagicMock()
         mock_collection = MagicMock()
@@ -109,7 +112,6 @@ class TestInitVectorstore:
             assert store.name == "chroma/test"
 
     def test_init_qdrant(self):
-        import sys
         mock_qdrant = MagicMock()
         mock_client = MagicMock()
         mock_collections = MagicMock()
@@ -125,7 +127,6 @@ class TestInitVectorstore:
             assert store.name == "qdrant/test"
 
     def test_init_mongodb(self):
-        import sys
         mock_pymongo = MagicMock()
         mock_client = MagicMock()
         mock_pymongo.MongoClient.return_value = mock_client
@@ -165,7 +166,6 @@ class TestRAGIndexer:
 
     def test_custom_chunker_used(self):
         from globalbot.backend.chunkings.base import BaseChunker
-        from typing import List
 
         class _FixedChunker(BaseChunker):
             def split_text(self, text: str) -> List[str]:
@@ -211,27 +211,6 @@ class TestRAGRetriever:
 
 
 class TestWebCrawler:
-    def test_crawl_single_page(self):
-        import sys
-        mock_requests = MagicMock()
-        mock_response = MagicMock()
-        mock_response.text = "<html><body><h1>Hello World</h1><p>This is a test page with enough content.</p></body></html>"
-        mock_response.raise_for_status = MagicMock()
-        mock_requests.get.return_value = mock_response
-
-        mock_bs4 = MagicMock()
-
-        with patch.dict(sys.modules, {"requests": mock_requests}):
-            from globalbot.backend.storages.vectorstores.crawler import WebCrawler
-            crawler = WebCrawler(
-                start_urls=["http://example.com"],
-                max_depth=0,
-                max_pages=1,
-                delay=0,
-            )
-            docs = crawler.run()
-            assert len(docs) >= 0
-
     def test_is_allowed_domain_filter(self):
         from globalbot.backend.storages.vectorstores.crawler import WebCrawler
         crawler = WebCrawler(

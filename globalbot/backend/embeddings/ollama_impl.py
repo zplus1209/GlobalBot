@@ -20,7 +20,7 @@ class OllamaEmbeddings(BaseEmbeddings):
         return self
 
     def _embed_documents(self, texts: List[str], **kwargs: Any) -> List[List[float]]:
-        from git.GlobalBot.globalbot.backend.embeddings.ollama_impl import Client
+        from ollama import Client
         client = Client(host=self.base_url)
         self.log.debug("embeddings.ollama.call", model=self.model, n=len(texts))
         vectors = []
@@ -30,7 +30,7 @@ class OllamaEmbeddings(BaseEmbeddings):
         return vectors
 
     def _embed_query(self, text: str, **kwargs: Any) -> List[float]:
-        from git.GlobalBot.globalbot.backend.embeddings.ollama_impl import Client
+        from ollama import Client
         client = Client(host=self.base_url)
         self.log.debug("embeddings.ollama.query", model=self.model)
         response = client.embed(model=self.model, input=text)

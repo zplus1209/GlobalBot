@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import sys
 from unittest.mock import MagicMock, patch
 
 from globalbot.backend.base import AIMessage, HumanMessage, SystemMessage
@@ -107,14 +108,13 @@ class TestInitChatModel:
         assert "hf" in OFFLINE_PROVIDERS
         assert "onnx" in OFFLINE_PROVIDERS
 
-    @patch("globalbot.backend.llms.chats.openai.OpenAI")
+    @patch("globalbot.backend.llms.chats.openai_impl.OpenAI")
     def test_init_openai(self, mock_openai):
         mock_openai.return_value = MagicMock()
         llm = init_chat_model("openai", api_key="test-key", model="gpt-4o-mini")
         assert llm.name == "openai/gpt-4o-mini"
 
     def test_init_openai_with_langchain(self):
-        import sys
         mock_lc_cls = MagicMock()
         mock_lc_cls.return_value = MagicMock()
         mock_langchain_openai = MagicMock()
@@ -127,7 +127,7 @@ class TestInitChatModel:
             llm = lb_mod.LCChatOpenAI(api_key="key", model="gpt-4o-mini")
             assert "lc/openai" in llm.name
 
-    @patch("globalbot.backend.llms.chats.ollama.Client")
+    @patch("globalbot.backend.llms.chats.ollama_impl.Client")
     def test_init_ollama(self, mock_client):
         llm = init_chat_model("ollama", model="llama3.1:8b")
         assert "ollama" in llm.name
@@ -140,7 +140,7 @@ class TestInitChatModel:
 
 
 class TestChatOpenAI:
-    @patch("globalbot.backend.llms.chats.openai.OpenAI")
+    @patch("globalbot.backend.llms.chats.openai_impl.OpenAI")
     def test_call(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
@@ -151,13 +151,13 @@ class TestChatOpenAI:
         mock_response.usage.completion_tokens = 5
         mock_client.chat.completions.create.return_value = mock_response
 
-        from git.GlobalBot.globalbot.backend.llms.chats.openai_impl import ChatOpenAI
+        from globalbot.backend.llms.chats.openai_impl import ChatOpenAI
         llm = ChatOpenAI(api_key="test", model="gpt-4o-mini")
         result = llm.run("Hi")
         assert result.text == "Hello!"
         assert result.total_tokens == 20
 
-    @patch("globalbot.backend.llms.chats.openai.OpenAI")
+    @patch("globalbot.backend.llms.chats.openai_impl.OpenAI")
     def test_stream(self, mock_openai_cls):
         mock_client = MagicMock()
         mock_openai_cls.return_value = mock_client
@@ -168,7 +168,7 @@ class TestChatOpenAI:
         chunk2.choices[0].delta.content = "lo!"
         mock_client.chat.completions.create.return_value = iter([chunk1, chunk2])
 
-        from git.GlobalBot.globalbot.backend.llms.chats.openai_impl import ChatOpenAI
+        from globalbot.backend.llms.chats.openai_impl import ChatOpenAI
         llm = ChatOpenAI(api_key="test", model="gpt-4o-mini")
         chunks = list(llm.stream("Hi"))
         assert chunks[-1].text == "Hello!"
