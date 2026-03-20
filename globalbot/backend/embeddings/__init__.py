@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 
 from globalbot.backend.embeddings.base import BaseEmbeddings
-from git.GlobalBot.globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings, AzureOpenAIEmbeddings, OpenAICompatibleEmbeddings
-from git.GlobalBot.globalbot.backend.embeddings.ollama_impl import OllamaEmbeddings
+from globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings, AzureOpenAIEmbeddings, OpenAICompatibleEmbeddings
+from globalbot.backend.embeddings.ollama_impl import OllamaEmbeddings
 from globalbot.backend.embeddings.langchain_based import (
     LangChainEmbeddings,
     LCOpenAIEmbeddings,

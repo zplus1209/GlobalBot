@@ -5,10 +5,10 @@ from unittest.mock import MagicMock, patch, call
 from typing import List
 
 from globalbot.backend.base import Document, RetrievedDocument
-from globalbot.backend.storage.vectorstores.base import BaseVectorStore
-from globalbot.backend.storage.vectorstores import init_vectorstore, VECTORSTORE_PROVIDERS
-from globalbot.backend.storage.ingestion import TextSplitter, RAGIndexer
-from globalbot.backend.storage.retrieval import RAGRetriever
+from globalbot.backend.storages.vectorstores.base import BaseVectorStore
+from globalbot.backend.storages.vectorstores import init_vectorstore, VECTORSTORE_PROVIDERS
+from globalbot.backend.storages.ingestion import RAGIndexer
+from globalbot.backend.storages.retrieval import RAGRetriever
 
 
 class _DummyVectorStore(BaseVectorStore):
@@ -138,34 +138,6 @@ class TestInitVectorstore:
             assert "mongodb" in store.name
 
 
-class TestTextSplitter:
-    def test_splits_long_text(self):
-        splitter = TextSplitter(chunk_size=50, chunk_overlap=10)
-        doc = Document.from_text("a" * 200, metadata={"source": "test"})
-        chunks = splitter.run([doc])
-        assert len(chunks) > 1
-
-    def test_preserves_metadata(self):
-        splitter = TextSplitter(chunk_size=50, chunk_overlap=0)
-        doc = Document.from_text("hello world " * 10, metadata={"source": "test.pdf"})
-        chunks = splitter.run([doc])
-        for chunk in chunks:
-            assert chunk.metadata.get("source") == "test.pdf"
-            assert chunk.metadata.get("parent_doc_id") == doc.doc_id
-
-    def test_short_text_single_chunk(self):
-        splitter = TextSplitter(chunk_size=1000, chunk_overlap=0)
-        doc = Document.from_text("short text")
-        chunks = splitter.run([doc])
-        assert len(chunks) == 1
-
-    def test_multiple_docs(self):
-        splitter = TextSplitter(chunk_size=50, chunk_overlap=0)
-        docs = [Document.from_text("a" * 100), Document.from_text("b" * 100)]
-        chunks = splitter.run(docs)
-        assert len(chunks) >= 4
-
-
 class TestRAGIndexer:
     def test_index_docs(self):
         store = _DummyVectorStore()
@@ -184,14 +156,29 @@ class TestRAGIndexer:
         result = indexer.run(docs)
         assert result["stored"] > 0
 
-    def test_splits_before_indexing(self):
+    def test_default_chunker_is_recursive(self):
+        from globalbot.backend.chunkings.fixed import RecursiveChunker
         store = _DummyVectorStore()
         embeddings = _DummyEmbeddings()
-        splitter = TextSplitter(chunk_size=20, chunk_overlap=0)
-        indexer = RAGIndexer(vectorstore=store, embeddings=embeddings, splitter=splitter)
+        indexer = RAGIndexer(vectorstore=store, embeddings=embeddings)
+        assert isinstance(indexer.chunker, RecursiveChunker)
+
+    def test_custom_chunker_used(self):
+        from globalbot.backend.chunkings.base import BaseChunker
+        from typing import List
+
+        class _FixedChunker(BaseChunker):
+            def split_text(self, text: str) -> List[str]:
+                return [text[i: i + self.chunk_size] for i in range(0, len(text), self.chunk_size) if text[i: i + self.chunk_size].strip()]
+
+        store = _DummyVectorStore()
+        embeddings = _DummyEmbeddings()
+        chunker = _FixedChunker(chunk_size=20)
+        indexer = RAGIndexer(vectorstore=store, embeddings=embeddings, chunker=chunker)
         docs = [Document.from_text("x" * 100)]
         result = indexer.run(docs)
         assert result["stored"] > 1
+        assert indexer.chunker is chunker
 
 
 class TestRAGRetriever:
@@ -235,7 +222,7 @@ class TestWebCrawler:
         mock_bs4 = MagicMock()
 
         with patch.dict(sys.modules, {"requests": mock_requests}):
-            from globalbot.backend.storage.vectorstores.crawler import WebCrawler
+            from globalbot.backend.storages.vectorstores.crawler import WebCrawler
             crawler = WebCrawler(
                 start_urls=["http://example.com"],
                 max_depth=0,
@@ -246,7 +233,7 @@ class TestWebCrawler:
             assert len(docs) >= 0
 
     def test_is_allowed_domain_filter(self):
-        from globalbot.backend.storage.vectorstores.crawler import WebCrawler
+        from globalbot.backend.storages.vectorstores.crawler import WebCrawler
         crawler = WebCrawler(
             start_urls=["http://example.com"],
             allowed_domains=["example.com"],
