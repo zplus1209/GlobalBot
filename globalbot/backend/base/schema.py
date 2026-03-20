@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar, List, Optional, Union
 
-from pydantic import Field
+from pydantic import Field, ConfigDict
 from langchain_core.documents import Document as LCDocument
 from langchain_core.messages import (
     AIMessage as LCAIMessage,
@@ -44,9 +44,10 @@ class Document(TextMixin, LCDocument):
     score: Optional[float] = None
     embedding: Optional[List[float]] = None
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(
+        arbitrary_types_allowed = True,
         extra = "allow"
+    )
 
     def model_post_init(self, __context: Any) -> None:
         if not self.doc_id:

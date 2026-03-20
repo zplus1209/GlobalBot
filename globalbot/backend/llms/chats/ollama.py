@@ -1,21 +1,23 @@
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Iterator, List, Optional
+from typing import Any, Iterator, List, Optional
 
+from ollama import Client
 from pydantic import model_validator
 
 from globalbot.backend.base import AIMessage, AnyMessage
-from globalbot.backend.llms.chats.base import BaseChatLLM
+from globalbot.backend.llms.chats.base import BaseChatLLM, _to_openai_messages
 
 
 def _to_ollama_messages(messages: List[AnyMessage]) -> List[dict]:
     role_map = {"HumanMessage": "user", "AIMessage": "assistant", "SystemMessage": "system"}
-    result = []
-    for m in messages:
-        role = role_map.get(type(m).__name__, "user")
-        content = m.content if isinstance(m.content, str) else str(m.content)
-        result.append({"role": role, "content": content})
-    return result
+    return [
+        {
+            "role": role_map.get(type(m).__name__, "user"),
+            "content": m.content if isinstance(m.content, str) else str(m.content),
+        }
+        for m in messages
+    ]
 
 
 class ChatOllama(BaseChatLLM):
@@ -38,17 +40,9 @@ class ChatOllama(BaseChatLLM):
         return opts
 
     def _call(self, messages: List[AnyMessage], **kwargs: Any) -> AIMessage:
-        from ollama import Client
-
         client = Client(host=self.base_url)
-
         self.log.debug("llm.ollama.call", model=self.model, n=len(messages))
-        response = client.chat(
-            model=self.model,
-            messages=_to_ollama_messages(messages),
-            options=self._get_options(),
-            # host=self.base_url,
-        )
+        response = client.chat(model=self.model, messages=_to_ollama_messages(messages), options=self._get_options())
         content = response.message.content or ""
         msg = AIMessage(content=content)
         if hasattr(response, "prompt_eval_count"):
@@ -59,18 +53,10 @@ class ChatOllama(BaseChatLLM):
         return msg
 
     def _stream(self, messages: List[AnyMessage], **kwargs: Any) -> Iterator[AIMessage]:
-        from ollama import Client
-
         client = Client(host=self.base_url)
-
         self.log.debug("llm.ollama.stream", model=self.model)
         accumulated = ""
-        for chunk in client.chat(
-            model=self.model,
-            messages=_to_ollama_messages(messages),
-            options=self._get_options(),
-            stream=True,
-        ):
+        for chunk in client.chat(model=self.model, messages=_to_ollama_messages(messages), options=self._get_options(), stream=True):
             if chunk.message and chunk.message.content:
                 accumulated += chunk.message.content
             yield AIMessage(content=accumulated)
@@ -94,27 +80,17 @@ class ChatOpenAICompatible(BaseChatLLM):
     @model_validator(mode="after")
     def _init_client(self) -> "ChatOpenAICompatible":
         from openai import OpenAI
-        self._client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            timeout=self.timeout,
-        )
+        self._client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
         if not self.name:
             self.name = f"openai-compat/{self.model}"
         return self
 
     def _call(self, messages: List[AnyMessage], **kwargs: Any) -> AIMessage:
-        from backend.llms.chats.openai import _to_openai_messages
         self.log.debug("llm.compat.call", model=self.model, base_url=self.base_url)
-        params: dict = dict(
-            model=self.model,
-            messages=_to_openai_messages(messages),
-            temperature=self.temperature,
-        )
+        params: dict = dict(model=self.model, messages=_to_openai_messages(messages), temperature=self.temperature)
         if self.max_tokens:
             params["max_tokens"] = self.max_tokens
         params.update(kwargs)
-
         response = self._client.chat.completions.create(**params)
         msg = AIMessage(content=response.choices[0].message.content or "")
         if response.usage:
@@ -124,13 +100,7 @@ class ChatOpenAICompatible(BaseChatLLM):
         return msg
 
     def _stream(self, messages: List[AnyMessage], **kwargs: Any) -> Iterator[AIMessage]:
-        from backend.llms.chats.openai import _to_openai_messages
-        params: dict = dict(
-            model=self.model,
-            messages=_to_openai_messages(messages),
-            temperature=self.temperature,
-            stream=True,
-        )
+        params: dict = dict(model=self.model, messages=_to_openai_messages(messages), temperature=self.temperature, stream=True)
         accumulated = ""
         for chunk in self._client.chat.completions.create(**params):
             delta = chunk.choices[0].delta

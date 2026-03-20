@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional
 
+from openai import OpenAI, AsyncOpenAI
 from pydantic import model_validator
 
 from globalbot.backend.embeddings.base import BaseEmbeddings
@@ -19,12 +20,7 @@ class OpenAIEmbeddings(BaseEmbeddings):
 
     @model_validator(mode="after")
     def _init_client(self) -> "OpenAIEmbeddings":
-        from openai import OpenAI
-        self._client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            timeout=self.timeout,
-        )
+        self._client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
         if not self.name:
             self.name = f"openai/{self.model}"
         return self
@@ -46,7 +42,6 @@ class OpenAIEmbeddings(BaseEmbeddings):
         return response.data[0].embedding
 
     async def _aembed_documents(self, texts: List[str], **kwargs: Any) -> List[List[float]]:
-        from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
         params: dict = dict(model=self.model, input=texts)
         if self.dimensions:
@@ -55,7 +50,6 @@ class OpenAIEmbeddings(BaseEmbeddings):
         return [item.embedding for item in response.data]
 
     async def _aembed_query(self, text: str, **kwargs: Any) -> List[float]:
-        from openai import AsyncOpenAI
         client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
         params: dict = dict(model=self.model, input=text)
         if self.dimensions:
@@ -78,10 +72,8 @@ class AzureOpenAIEmbeddings(BaseEmbeddings):
     def _init_client(self) -> "AzureOpenAIEmbeddings":
         from openai import AzureOpenAI
         self._client = AzureOpenAI(
-            azure_endpoint=self.azure_endpoint,
-            api_key=self.api_key,
-            api_version=self.api_version,
-            timeout=self.timeout,
+            azure_endpoint=self.azure_endpoint, api_key=self.api_key,
+            api_version=self.api_version, timeout=self.timeout,
         )
         if not self.name:
             self.name = f"azure/{self.azure_deployment or self.model}"
@@ -110,12 +102,7 @@ class OpenAICompatibleEmbeddings(BaseEmbeddings):
 
     @model_validator(mode="after")
     def _init_client(self) -> "OpenAICompatibleEmbeddings":
-        from openai import OpenAI
-        self._client = OpenAI(
-            api_key=self.api_key,
-            base_url=self.base_url,
-            timeout=self.timeout,
-        )
+        self._client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=self.timeout)
         if not self.name:
             self.name = f"openai-compat/{self.model}"
         return self

@@ -4,7 +4,7 @@ from typing import Any, List, Optional
 
 from pydantic import model_validator
 
-from backend.embeddings.base import BaseEmbeddings
+from globalbot.backend.embeddings.base import BaseEmbeddings
 
 
 class OllamaEmbeddings(BaseEmbeddings):
@@ -21,9 +21,7 @@ class OllamaEmbeddings(BaseEmbeddings):
 
     def _embed_documents(self, texts: List[str], **kwargs: Any) -> List[List[float]]:
         from ollama import Client
-
         client = Client(host=self.base_url)
-
         self.log.debug("embeddings.ollama.call", model=self.model, n=len(texts))
         vectors = []
         for text in texts:
@@ -33,9 +31,7 @@ class OllamaEmbeddings(BaseEmbeddings):
 
     def _embed_query(self, text: str, **kwargs: Any) -> List[float]:
         from ollama import Client
-
         client = Client(host=self.base_url)
-
         self.log.debug("embeddings.ollama.query", model=self.model)
         response = client.embed(model=self.model, input=text)
         return response.embeddings[0]
@@ -49,4 +45,3 @@ class OllamaEmbeddings(BaseEmbeddings):
         import asyncio
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, lambda: self._embed_query(text, **kwargs))
-

@@ -5,15 +5,17 @@ import asyncio
 from abc import abstractmethod
 from typing import Any, AsyncIterator, Iterator, List, Optional, Union
 
-from backend.base import (
+from globalbot.backend.base import (
     BaseComponent,
-    AIMessage, 
-    AnyMessage, 
-    HumanMessage, 
-    SystemMessage
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    SystemMessage,
 )
+from globalbot.backend.base.schema import get_text
 
 MessageInput = Union[str, dict, AnyMessage]
+
 
 def _normalise(messages: List[MessageInput]) -> List[AnyMessage]:
     out: List[AnyMessage] = []
@@ -32,15 +34,26 @@ def _normalise(messages: List[MessageInput]) -> List[AnyMessage]:
             else:
                 out.append(HumanMessage(content=content))
         else:
-            from backend.base.schema import get_text
             out.append(HumanMessage(content=get_text(m)))
     return out
+
 
 def _preview(messages: List[AnyMessage]) -> str:
     if not messages:
         return "(empty)"
     last = messages[-1]
     return f"{type(last).__name__}: {last.text[:60].replace(chr(10), ' ')!r}"
+
+
+def _to_openai_messages(messages: List[AnyMessage]) -> List[dict]:
+    role_map = {"HumanMessage": "user", "AIMessage": "assistant", "SystemMessage": "system"}
+    return [
+        {
+            "role": role_map.get(type(m).__name__, "user"),
+            "content": m.content if isinstance(m.content, str) else str(m.content),
+        }
+        for m in messages
+    ]
 
 
 class BaseChatLLM(BaseComponent):
@@ -79,7 +92,6 @@ class BaseChatLLM(BaseComponent):
         try:
             for chunk in self._stream(normed, **kwargs):
                 n += 1
-                self.log.debug("llm.stream.chunk", chunk=n, chars=len(chunk.text))
                 last = chunk
                 yield chunk
         except Exception as exc:
@@ -87,13 +99,7 @@ class BaseChatLLM(BaseComponent):
             self.log.error("llm.stream.error", model=label, duration_ms=ms, error=str(exc)[:120])
             raise
         ms = int((time.perf_counter() - t0) * 1000)
-        self.log.info(
-            "llm.stream.end",
-            model=label,
-            duration_ms=ms,
-            n_chunks=n,
-            chars=len(last.text) if last else 0,
-        )
+        self.log.info("llm.stream.end", model=label, duration_ms=ms, n_chunks=n, chars=len(last.text) if last else 0)
 
     async def arun(self, messages: Union[MessageInput, List[MessageInput]], **kwargs: Any) -> AIMessage:
         if isinstance(messages, (str, dict)) or not isinstance(messages, list):

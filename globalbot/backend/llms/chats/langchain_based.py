@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncIterator, Iterator, List, Optional
 
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, ConfigDict
 
 from globalbot.backend.llms.chats.base import BaseChatLLM
 from globalbot.backend.base import AIMessage, AnyMessage, HumanMessage, SystemMessage
@@ -11,9 +11,10 @@ from globalbot.backend.base import AIMessage, AnyMessage, HumanMessage, SystemMe
 class LangChainChatLLM(BaseChatLLM):
     lc_model: Any = Field(default=None, exclude=True)
 
-    class Config:
+    model_config = ConfigDict(
         arbitrary_types_allowed = True
-
+    )
+    
     def _get_model(self) -> Any:
         if self.lc_model is None:
             raise ValueError(f"{type(self).__name__}: lc_model is not set.")
