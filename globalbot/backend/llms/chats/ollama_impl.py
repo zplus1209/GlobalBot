@@ -107,3 +107,13 @@ class ChatOpenAICompatible(BaseChatLLM):
             if delta.content:
                 accumulated += delta.content
             yield AIMessage(content=accumulated)
+
+
+if __name__ == "__main__":
+    llm = ChatOllama(model="qwen3.5:35b")
+
+    q = "Bạn là chuyên gia AI, hãy cho tôi biết DiT là gì? Và flow matching giúp gì?"
+
+    ans = llm.run(q)
+
+    print(ans.text)

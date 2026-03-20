@@ -101,7 +101,7 @@ class TestOpenAIEmbeddings:
         mock_response.data = [MagicMock(embedding=[0.1, 0.2, 0.3]), MagicMock(embedding=[0.4, 0.5, 0.6])]
         mock_client.embeddings.create.return_value = mock_response
 
-        from globalbot.backend.embeddings.openai import OpenAIEmbeddings
+        from git.GlobalBot.globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
         emb = OpenAIEmbeddings(api_key="test")
         result = emb.run(["text1", "text2"])
         assert len(result) == 2
@@ -115,7 +115,7 @@ class TestOpenAIEmbeddings:
         mock_response.data = [MagicMock(embedding=[0.1, 0.2, 0.3])]
         mock_client.embeddings.create.return_value = mock_response
 
-        from globalbot.backend.embeddings.openai import OpenAIEmbeddings
+        from git.GlobalBot.globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
         emb = OpenAIEmbeddings(api_key="test")
         result = emb.embed_query("hello")
         assert result == [0.1, 0.2, 0.3]
@@ -128,7 +128,7 @@ class TestOpenAIEmbeddings:
         mock_response.data = [MagicMock(embedding=[0.1, 0.2])]
         mock_client.embeddings.create.return_value = mock_response
 
-        from globalbot.backend.embeddings.openai import OpenAIEmbeddings
+        from git.GlobalBot.globalbot.backend.embeddings.openai_impl import OpenAIEmbeddings
         emb = OpenAIEmbeddings(api_key="test", dimensions=512)
         emb.embed_query("hello")
         call_kwargs = mock_client.embeddings.create.call_args[1]

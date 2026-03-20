@@ -151,7 +151,7 @@ class TestChatOpenAI:
         mock_response.usage.completion_tokens = 5
         mock_client.chat.completions.create.return_value = mock_response
 
-        from globalbot.backend.llms.chats.openai import ChatOpenAI
+        from git.GlobalBot.globalbot.backend.llms.chats.openai_impl import ChatOpenAI
         llm = ChatOpenAI(api_key="test", model="gpt-4o-mini")
         result = llm.run("Hi")
         assert result.text == "Hello!"
@@ -168,7 +168,7 @@ class TestChatOpenAI:
         chunk2.choices[0].delta.content = "lo!"
         mock_client.chat.completions.create.return_value = iter([chunk1, chunk2])
 
-        from globalbot.backend.llms.chats.openai import ChatOpenAI
+        from git.GlobalBot.globalbot.backend.llms.chats.openai_impl import ChatOpenAI
         llm = ChatOpenAI(api_key="test", model="gpt-4o-mini")
         chunks = list(llm.stream("Hi"))
         assert chunks[-1].text == "Hello!"

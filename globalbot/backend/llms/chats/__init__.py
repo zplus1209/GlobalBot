@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from globalbot.backend.llms.chats.base import BaseChatLLM
-from globalbot.backend.llms.chats.openai import ChatOpenAI, AzureChatOpenAI
-from globalbot.backend.llms.chats.ollama import ChatOllama, ChatOpenAICompatible
+from globalbot.backend.llms.chats.openai_impl import ChatOpenAI, AzureChatOpenAI
+from globalbot.backend.llms.chats.ollama_impl import ChatOllama, ChatOpenAICompatible
 from globalbot.backend.llms.chats.langchain_based import (
     LCChatOllama,
     LCChatOpenAI,
