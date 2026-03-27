@@ -22,15 +22,15 @@ ALLOWED_MIME = {
 }
 
 
-def _process_doc(rec: DocumentRecord):
+def _process_doc(rec: DocumentRecord) -> None:
     try:
         rec.status = "processing"
         rec.save()
 
+        # BUG FIX: _rag_instance thuộc factory.py, không phải rag/core.py
         from globalbot.backend.model.ade import ADEAgent, load_document
-        from globalbot.backend.llms.factory import _llm_instance
+        from globalbot.backend.llms.factory import _llm_instance, _rag_instance
         from globalbot.backend.rag.chunker import chunk_blocks
-        from globalbot.backend.rag.core import _rag_instance
         import json
 
         pages = load_document(rec.file_path)
@@ -40,7 +40,9 @@ def _process_doc(rec: DocumentRecord):
             b["doc_id"] = rec.doc_id
 
         blocks_path = UPLOAD_DIR / f"{rec.doc_id}_blocks.json"
-        blocks_path.write_text(json.dumps(blocks, ensure_ascii=False, indent=2), encoding="utf-8")
+        blocks_path.write_text(
+            json.dumps(blocks, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         chunks = chunk_blocks(blocks, doc_id=rec.doc_id)
         rag = _rag_instance()
@@ -53,9 +55,9 @@ def _process_doc(rec: DocumentRecord):
         rec.error = None
         rec.save()
 
-    except Exception as e:
+    except Exception as exc:
         rec.status = "error"
-        rec.error = str(e)
+        rec.error = str(exc)
         rec.save()
 
 
@@ -112,7 +114,7 @@ def get_original_file(doc_id: str):
         raise HTTPException(404, "Document not found")
     path = Path(rec.file_path)
     if not path.exists():
-        raise HTTPException(404, "File not found")
+        raise HTTPException(404, "File not found on disk")
     return FileResponse(
         path=str(path),
         media_type=rec.mime_type,
@@ -129,6 +131,7 @@ def delete_file(doc_id: str):
 
 @router.post("/{doc_id}/ask")
 def ask_file(doc_id: str, payload: dict):
+    # BUG FIX: import đúng vị trí
     from globalbot.backend.llms.factory import _rag_instance
 
     rec = store.get(doc_id)

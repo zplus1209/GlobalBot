@@ -16,22 +16,32 @@ def init_singletons(
     db_type: str = "chromadb",
     embedding_name: str = "Alibaba-NLP/gte-multilingual-base",
     **rag_kwargs,
-):
+) -> None:
     global _llm, _rag
+
     _llm = build_llm(mode, model_name, model_version, api_key, base_url, engine)
-    from rag.core import RAG
+
+    # BUG FIX: dùng import tương đối để tránh ModuleNotFoundError khi
+    # backend dir chưa được thêm vào sys.path trước khi gọi hàm này.
+    # serve.py đã đảm bảo backend dir trong sys.path, nên flat-import hoạt động.
+    from rag.core import RAG  # flat import — backend dir phải có trong sys.path
+
     _rag = RAG(llm=_llm, db_type=db_type, embedding_name=embedding_name, **rag_kwargs)
 
 
 def _llm_instance() -> Any:
     if _llm is None:
-        raise RuntimeError("Call init_singletons() first")
+        raise RuntimeError(
+            "LLM chưa được khởi tạo. Hãy gọi init_singletons() trước."
+        )
     return _llm
 
 
 def _rag_instance() -> Any:
     if _rag is None:
-        raise RuntimeError("Call init_singletons() first")
+        raise RuntimeError(
+            "RAG chưa được khởi tạo. Hãy gọi init_singletons() trước."
+        )
     return _rag
 
 
@@ -52,7 +62,7 @@ def build_llm(
 def _build_online(
     model_name: str,
     model_version: str,
-    api_key: str,
+    api_key: Optional[str],
     base_url: Optional[str],
     temperature: float,
 ) -> Any:
@@ -81,15 +91,18 @@ def _build_online(
             temperature=temperature,
         )
 
-    raise ValueError(f"Unsupported online model: {model_name}")
+    raise ValueError(f"Unsupported online model: {model_name!r}")
 
 
 def _build_offline(
-    engine: str,
+    engine: Optional[str],
     model_version: str,
     base_url: Optional[str],
     temperature: float,
 ) -> Any:
+    if engine is None:
+        raise ValueError("engine phải được cung cấp cho offline mode")
+
     if engine == "ollama":
         from langchain_ollama import ChatOllama
         return ChatOllama(
@@ -108,9 +121,9 @@ def _build_offline(
         )
 
     if engine == "huggingface":
-        from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
         import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+        from langchain_huggingface import ChatHuggingFace, HuggingFacePipeline
 
         tokenizer = AutoTokenizer.from_pretrained(model_version)
         model = AutoModelForCausalLM.from_pretrained(
@@ -132,4 +145,4 @@ def _build_offline(
         from llms.onnx import ONNXChatWrapper
         return ONNXChatWrapper(model_path=model_version)
 
-    raise ValueError(f"Unsupported offline engine: {engine}")
+    raise ValueError(f"Unsupported offline engine: {engine!r}")

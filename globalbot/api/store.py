@@ -11,6 +11,7 @@ from typing import Optional
 UPLOAD_DIR = Path("./uploads")
 META_DIR   = Path("./uploads/.meta")
 CHAT_DIR   = META_DIR / "chats"
+
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 META_DIR.mkdir(parents=True, exist_ok=True)
 CHAT_DIR.mkdir(parents=True, exist_ok=True)
@@ -18,19 +19,19 @@ CHAT_DIR.mkdir(parents=True, exist_ok=True)
 
 @dataclass
 class DocumentRecord:
-    doc_id:          str
-    filename:        str
-    file_path:       str
-    mime_type:       str
-    pages:           int          = 0
-    blocks_count:    int          = 0
-    chunks_count:    int          = 0
-    status:          str          = "pending"   # pending | processing | ready | error
-    error:           Optional[str] = None
-    created_at:      float        = field(default_factory=time.time)
-    updated_at:      float        = field(default_factory=time.time)
+    doc_id:       str
+    filename:     str
+    file_path:    str
+    mime_type:    str
+    pages:        int           = 0
+    blocks_count: int           = 0
+    chunks_count: int           = 0
+    status:       str           = "pending"   # pending | processing | ready | error
+    error:        Optional[str] = None
+    created_at:   float         = field(default_factory=time.time)
+    updated_at:   float         = field(default_factory=time.time)
 
-    def save(self):
+    def save(self) -> None:
         self.updated_at = time.time()
         meta_path = META_DIR / f"{self.doc_id}.json"
         meta_path.write_text(json.dumps(asdict(self)), encoding="utf-8")
@@ -49,7 +50,7 @@ class DocumentRecord:
 
 class DocumentStore:
     def list_all(self) -> list[DocumentRecord]:
-        records = []
+        records: list[DocumentRecord] = []
         for f in META_DIR.glob("*.json"):
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
@@ -65,24 +66,35 @@ class DocumentStore:
         rec = DocumentRecord.load(doc_id)
         if rec is None:
             return False
+
+        # Xoá file gốc
         Path(rec.file_path).unlink(missing_ok=True)
+
+        # BUG FIX: cũng xoá blocks.json (trước đây bị bỏ sót)
+        blocks_path = UPLOAD_DIR / f"{doc_id}_blocks.json"
+        blocks_path.unlink(missing_ok=True)
+
+        # Xoá metadata
         (META_DIR / f"{doc_id}.json").unlink(missing_ok=True)
-        crops = Path(f"./uploads/{doc_id}_crops")
+
+        # Xoá thư mục crops nếu tồn tại
+        crops = UPLOAD_DIR / f"{doc_id}_crops"
         if crops.exists():
-            shutil.rmtree(crops)
+            shutil.rmtree(crops, ignore_errors=True)
+
         return True
 
 
 @dataclass
 class ChatSessionRecord:
-    chat_id: str
-    mode: str = "knowledge"
-    title: str = "New chat"
-    messages: list[dict] = field(default_factory=list)
-    created_at: float = field(default_factory=time.time)
-    updated_at: float = field(default_factory=time.time)
+    chat_id:    str
+    mode:       str         = "knowledge"
+    title:      str         = "New chat"
+    messages:   list[dict]  = field(default_factory=list)
+    created_at: float       = field(default_factory=time.time)
+    updated_at: float       = field(default_factory=time.time)
 
-    def save(self):
+    def save(self) -> None:
         self.updated_at = time.time()
         (CHAT_DIR / f"{self.chat_id}.json").write_text(
             json.dumps(asdict(self), ensure_ascii=False),
@@ -122,7 +134,7 @@ class ChatStore:
             return False
         (CHAT_DIR / f"{chat_id}.json").unlink(missing_ok=True)
         return True
-    
 
-store = DocumentStore()
+
+store      = DocumentStore()
 chat_store = ChatStore()

@@ -11,40 +11,41 @@ import fitz
 from loguru import logger
 
 from model.layout import PPDocLayoutDetector, LayoutRegion
-from model.ocr.base import TextOCR
+# BUG FIX: TextOCR nằm ở model/utils/text_extraction.py, KHÔNG phải model/ocr/base.py
+from model.utils.text_extraction import TextOCR
 from model.reading_order import sort_reading_order
 
-_VISUAL_TYPES = {"figure", "chart", "image", "table", "formula", "equation", "seal", "stamp"}
-_TEXT_TYPES = {
+_VISUAL_TYPES  = {"figure", "chart", "image", "table", "formula", "equation", "seal", "stamp"}
+_TEXT_TYPES    = {
     "text", "paragraph_title", "title", "header", "footer",
     "footnote", "caption", "number", "abstract", "content",
     "reference", "paragraph",
 }
-_TABLE_TYPES = {"table"}
+_TABLE_TYPES   = {"table"}
 _FORMULA_TYPES = {"formula", "equation"}
-_CHART_TYPES = {"chart"}
-_LIST_ORIGINS = {"number", "footnote"}
+_CHART_TYPES   = {"chart"}
+_LIST_ORIGINS  = {"number", "footnote"}
 
 
 @dataclass
 class RegionContext:
-    position: int
+    position:    int
     region_type: str
-    bbox: list[int]
-    base64_img: str
-    ocr_text: str = ""
-    needs_vlm: bool = False
-    crop_path: str = ""
+    bbox:        list[int]
+    base64_img:  str
+    ocr_text:    str  = ""
+    needs_vlm:   bool = False
+    crop_path:   str  = ""
 
 
 @dataclass
 class PageContext:
-    image_path: str
-    page: Optional[int]
-    img_w: int
-    img_h: int
-    regions: list[RegionContext] = field(default_factory=list)
-    ocr_blocks: list[dict] = field(default_factory=list)
+    image_path:  str
+    page:        Optional[int]
+    img_w:       int
+    img_h:       int
+    regions:     list[RegionContext] = field(default_factory=list)
+    ocr_blocks:  list[dict]         = field(default_factory=list)
 
     def visual_regions(self) -> list[RegionContext]:
         return [r for r in self.regions if r.needs_vlm]
@@ -63,7 +64,7 @@ def _encode_b64(path: str) -> str:
 
 def _convert_doc_to_images(doc_path: str, dpi: int = 150) -> list[str]:
     suffix = Path(doc_path).suffix.lower()
-    image_paths = []
+    image_paths: list[str] = []
 
     if suffix == ".pdf":
         pdf = fitz.open(doc_path)
@@ -117,7 +118,7 @@ def process_page(
         r.position = i
 
     ocr_engine = TextOCR()
-    all_boxes = []
+    all_boxes: list[dict] = []
 
     for r in raw_regions:
         if r.region_type not in _TEXT_TYPES:
@@ -135,20 +136,23 @@ def process_page(
             all_boxes.append(b)
 
     sorted_boxes = sort_reading_order(all_boxes, img_w, img_h) if all_boxes else []
+
     ocr_map: dict[int, str] = {}
     for b in sorted_boxes:
         rid = b.get("region_id")
         if rid and b.get("text"):
             ocr_map[rid] = ocr_map.get(rid, "") + " " + b["text"].strip()
 
-    regions = []
+    regions: list[RegionContext] = []
     for r in raw_regions:
         needs_vlm = r.region_type in _VISUAL_TYPES
         crop_path = ""
 
         if needs_vlm:
             x0, y0, x1, y1 = r.bbox
-            crop_path = f"{crops_dir}/page{page or 0}_region{r.position}_{r.region_type}.jpg"
+            crop_path = (
+                f"{crops_dir}/page{page or 0}_region{r.position}_{r.region_type}.jpg"
+            )
             cv2.imwrite(crop_path, image[y0:y1, x0:x1])
 
         regions.append(RegionContext(
@@ -178,7 +182,7 @@ def load_document(
     dpi: int = 150,
 ) -> list[PageContext]:
     image_paths = _convert_doc_to_images(doc_path, dpi=dpi)
-    pages = []
+    pages: list[PageContext] = []
     for i, img_path in enumerate(image_paths):
         logger.info(f"Processing page {i + 1}/{len(image_paths)}")
         ctx = process_page(img_path, page=i + 1, threshold=threshold, crops_dir=crops_dir)

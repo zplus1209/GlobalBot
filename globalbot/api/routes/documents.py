@@ -22,14 +22,14 @@ ALLOWED_MIME = {
 }
 
 
-def _process_doc(rec: DocumentRecord):
+def _process_doc(rec: DocumentRecord) -> None:
     try:
         rec.status = "processing"
         rec.save()
 
-        from globalbot.backend.model.ade import load_document, ADEAgent, to_json, to_markdown
-        from globalbot.backend.llms.factory import _llm_instance
-        from globalbot.backend.rag.core import _rag_instance
+        # BUG FIX: _rag_instance thuộc factory.py, không phải rag/core.py
+        from globalbot.backend.model.ade import load_document, ADEAgent
+        from globalbot.backend.llms.factory import _llm_instance, _rag_instance
         from globalbot.backend.rag.chunker import chunk_blocks
         import json
 
@@ -40,21 +40,24 @@ def _process_doc(rec: DocumentRecord):
             b["doc_id"] = rec.doc_id
 
         blocks_path = UPLOAD_DIR / f"{rec.doc_id}_blocks.json"
-        blocks_path.write_text(json.dumps(blocks, ensure_ascii=False, indent=2), encoding="utf-8")
+        blocks_path.write_text(
+            json.dumps(blocks, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
         chunks = chunk_blocks(blocks, doc_id=rec.doc_id)
         rag = _rag_instance()
         rag.add_documents(chunks)
 
-        rec.pages       = len(pages)
+        rec.pages = len(pages)
         rec.blocks_count = len(blocks)
         rec.chunks_count = len(chunks)
-        rec.status      = "ready"
+        rec.status = "ready"
+        rec.error = None
         rec.save()
 
-    except Exception as e:
+    except Exception as exc:
         rec.status = "error"
-        rec.error  = str(e)
+        rec.error = str(exc)
         rec.save()
 
 
@@ -64,10 +67,10 @@ async def upload_document(bg: BackgroundTasks, file: UploadFile = File(...)):
     if mime not in ALLOWED_MIME:
         raise HTTPException(400, f"Unsupported type: {mime}")
 
-    doc_id   = str(uuid.uuid4())
-    ext      = ALLOWED_MIME[mime]
+    doc_id = str(uuid.uuid4())
+    ext = ALLOWED_MIME[mime]
     filename = Path(file.filename).name
-    dest     = UPLOAD_DIR / f"{doc_id}{ext}"
+    dest = UPLOAD_DIR / f"{doc_id}{ext}"
     dest.write_bytes(await file.read())
 
     rec = DocumentRecord(
@@ -78,7 +81,6 @@ async def upload_document(bg: BackgroundTasks, file: UploadFile = File(...)):
     )
     rec.save()
     bg.add_task(_process_doc, rec)
-
     return {"doc_id": doc_id, "status": "processing", "filename": filename}
 
 
@@ -98,6 +100,7 @@ def get_document(doc_id: str):
 @router.get("/{doc_id}/blocks")
 def get_blocks(doc_id: str):
     import json
+
     blocks_path = UPLOAD_DIR / f"{doc_id}_blocks.json"
     if not blocks_path.exists():
         raise HTTPException(404, "Blocks not ready")
@@ -111,7 +114,7 @@ def serve_file(doc_id: str):
         raise HTTPException(404, "Document not found")
     path = Path(rec.file_path)
     if not path.exists():
-        raise HTTPException(404, "File not found")
+        raise HTTPException(404, "File not found on disk")
     return FileResponse(
         path=str(path),
         media_type=rec.mime_type,
