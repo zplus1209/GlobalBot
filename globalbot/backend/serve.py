@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -9,12 +10,20 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+# Add the project root to the Python path so we can import globalbot
+sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
+
 load_dotenv()
 os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
+# Configure HF_TOKEN for Hugging Face Hub
+hf_token = os.getenv("HF_TOKEN")
+if hf_token:
+    os.environ["HF_TOKEN"] = hf_token
+
 
 def create_app(args: argparse.Namespace) -> FastAPI:
-    from llms.factory import init_singletons
+    from globalbot.backend.llms.factory import init_singletons
     from globalbot.api.routes.documents import router as doc_router
     from globalbot.api.routes.chat import router as chat_router
     from globalbot.api.routes.pipeline import router as pipeline_router
@@ -32,9 +41,13 @@ def create_app(args: argparse.Namespace) -> FastAPI:
     )
 
     app = FastAPI(title="Document RAG API", version="2.0.0", docs_url="/docs")
+    allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+    origins = [origin.strip() for origin in allowed_origins.split(",")]
     app.add_middleware(
-        CORSMiddleware, allow_origins=["*"],
-        allow_methods=["*"], allow_headers=["*"],
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
     app.include_router(doc_router)
     app.include_router(chat_router)
@@ -56,7 +69,10 @@ def _api_key(args):
 
 def _base_url(args):
     m = {"together": "TOGETHER_BASE_URL", "ollama": "OLLAMA_BASE_URL", "vllm": "VLLM_BASE_URL"}
-    k = m.get(args.model_name) or m.get(getattr(args, "model_engine", ""), "")
+    k = m.get(args.model_name)
+    if k is None:
+        # Fallback to model_engine if model_name not in mapping
+        k = m.get(getattr(args, "model_engine", ""))
     return os.getenv(k) if k else None
 
 
@@ -72,7 +88,7 @@ def main():
     g.add_argument("--embedding_model", default="Alibaba-NLP/gte-multilingual-base")
     g = parser.add_argument_group("Server")
     g.add_argument("--host", default="0.0.0.0")
-    g.add_argument("--port", type=int, default=5002)
+    g.add_argument("--port", type=int, default=3000)
     args = parser.parse_args()
 
     import uvicorn
