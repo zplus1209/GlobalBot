@@ -1,0 +1,1 @@
+from .lighton_ocr import LightOnOCRParser

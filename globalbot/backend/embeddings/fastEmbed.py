@@ -1,37 +1,33 @@
-from __future__ import annotations
+import os
+from typing import Optional, Union, List
+from fastembed import TextEmbedding
+from embeddings import BaseEmbedding
 
-from typing import Any, List, Optional
+class FastEmbedding(BaseEmbedding):
+    def __init__(
+            self,
+            # Multilingual model
+            name: str = 'BAAI/bge-m3',
+            max_length:int = 512
+        ):
+        super().__init__(name=name)
+        
+        try:
+            self.embedding_model = TextEmbedding(
+                name=name,
+                max_length=max_length
+            )
+        except Exception as e:
+            raise ValueError(
+                f"Fastembed failed to initialize. Error: {e}"
+            ) from e
 
-from pydantic import model_validator
-
-from globalbot.backend.embeddings.base import BaseEmbeddings
-
-
-class FastEmbedEmbeddings(BaseEmbeddings):
-    model: str = "BAAI/bge-small-en-v1.5"
-    max_length: int = 512
-    batch_size: int = 256
-    cache_dir: Optional[str] = None
-
-    _model: Any = None
-
-    @model_validator(mode="after")
-    def _init_model(self) -> "FastEmbedEmbeddings":
-        from fastembed import TextEmbedding
-        kwargs: dict = dict(model_name=self.model, max_length=self.max_length)
-        if self.cache_dir:
-            kwargs["cache_dir"] = self.cache_dir
-        self._model = TextEmbedding(**kwargs)
-        if not self.name:
-            self.name = f"fastembed/{self.model}"
-        return self
-
-    def _embed_documents(self, texts: List[str], **kwargs: Any) -> List[List[float]]:
-        self.log.debug("embeddings.fastembed.call", model=self.model, n=len(texts))
-        embeddings = list(self._model.embed(texts, batch_size=self.batch_size))
-        return [e.tolist() for e in embeddings]
-
-    def _embed_query(self, text: str, **kwargs: Any) -> List[float]:
-        self.log.debug("embeddings.fastembed.query", model=self.model)
-        embeddings = list(self._model.embed([text]))
-        return embeddings[0].tolist()
+    def encode(self, docs: List[str]):
+        try:
+            embeds = self.embedding_model.embed(docs)
+            embeddings: List[List[float]] = [e.tolist() for e in embeds]
+            return embeddings
+        except Exception as e:
+            raise ValueError(
+                f"Failed to get embeddings. Error details: {e}"
+            ) from e
