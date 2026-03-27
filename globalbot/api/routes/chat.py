@@ -35,8 +35,8 @@ def _last_user_msg(messages: List[Message]) -> str:
 
 @router.post("/document")
 def ask_document(req: DocAskRequest):
-    from api.store import store
-    from llms.factory import _rag_instance
+    from globalbot.api.store import store
+    from globalbot.backend.llms.factory import _rag_instance
 
     rec = store.get(req.doc_id)
     if rec is None:
@@ -61,7 +61,7 @@ def ask_document(req: DocAskRequest):
 
 @router.post("/knowledge")
 def ask_knowledge(req: KnowledgeAskRequest):
-    from llms.factory import _llm_instance, _rag_instance
+    from globalbot.backend.llms.factory import _llm_instance, _rag_instance
 
     query = _last_user_msg(req.messages)
     if not query:

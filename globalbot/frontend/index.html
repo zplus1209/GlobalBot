@@ -3,22 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Document RAG</title>
+<title>GlobalBot RAG Workspace</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
   --bg: #f5f5f4; --surface: #ffffff; --border: #e5e7eb;
-  --text: #111827; --muted: #6b7280; --accent: #2563eb;
+  --text: #f3f6fb; --muted: #6b7280; --accent: #2563eb;
   --accent-light: #eff6ff; --danger: #ef4444;
   --bbox-text: #2563eb; --bbox-table: #d97706;
   --bbox-image: #059669; --bbox-chart: #dc2626; --bbox-formula: #7c3aed;
-  --sidebar: 280px; --viewer: 1fr; --chat: 380px;
+  --sidebar: 290px; --viewer: 1fr; --chat: 390px;
 }
-body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+body { font-family: Inter, system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
 .layout { display: grid; grid-template-columns: var(--sidebar) var(--viewer) var(--chat); height: 100vh; }
 .panel { display: flex; flex-direction: column; overflow: hidden; }
-.panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; }
+.panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); flex-shrink: 0; backdrop-filter: blur(4px); }
 .panel-header h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .panel-body { flex: 1; overflow-y: auto; }
 
@@ -79,6 +79,33 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
 .typing { align-self: flex-start; padding: 8px 12px; background: var(--bg); border-radius: 2px 12px 12px 12px; font-size: 12px; color: var(--muted); }
 .no-doc-hint { padding: 20px; text-align: center; font-size: 12px; color: var(--muted); }
 .empty-viewer { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); font-size: 13px; }
+
+.source-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 6px;
+}
+.source-table th,
+.source-table td {
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.source-table th {
+  background: var(--surface);
+  font-weight: 500;
+}
+.source-table button {
+  padding: 2px 6px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.source-table button:hover {
+  background: var(--bg);
+}
 </style>
 </head>
 <body>
@@ -155,7 +182,7 @@ let state = {
 // ─── Document list ───────────────────────────────────────────────────────────
 
 async function loadDocs() {
-  const res = await fetch(`${API}/api/documents`);
+  const res = await fetch(`${API}/api/pipeline/files`);
   state.docs = await res.json();
   renderDocList();
 }
@@ -181,7 +208,7 @@ function renderDocList() {
 async function deleteDoc(e, docId) {
   e.stopPropagation();
   if (!confirm('Delete this document?')) return;
-  await fetch(`${API}/api/documents/${docId}`, { method: 'DELETE' });
+  await fetch(`${API}/api/pipeline/files/${docId}`, { method: 'DELETE' });
   if (state.activeDocId === docId) { state.activeDocId = null; clearViewer(); }
   loadDocs();
 }
@@ -204,7 +231,7 @@ zone.addEventListener('drop', e => {
 async function uploadFile(file) {
   const fd = new FormData();
   fd.append('file', file);
-  await fetch(`${API}/api/documents`, { method: 'POST', body: fd });
+  await fetch(`${API}/api/pipeline/files`, { method: 'POST', body: fd });
   loadDocs();
   setTimeout(() => pollReady(), 3000);
 }
@@ -227,14 +254,15 @@ async function openDoc(docId) {
   const rec = state.docs.find(d => d.doc_id === docId);
   document.getElementById('docTitle').textContent = rec?.filename || '';
 
-  const url = `${API}/api/documents/${docId}/file`;
-  const head = await fetch(url, { method: 'HEAD' }).catch(() => null);
+  const url = `${API}/api/pipeline/files/${docId}/original`;
   const mime = rec?.mime_type || '';
 
   if (mime === 'application/pdf') {
     await loadPdf(docId, url);
-  } else {
+  } else if (mime.startsWith('image/')) {
     loadImage(docId, url);
+  } else {
+    loadOriginalFileFallback(url, rec?.filename || 'original file');
   }
   document.getElementById('viewerToolbar').style.display = 'flex';
 }
@@ -311,6 +339,18 @@ function loadImage(docId, url) {
   wrapper.appendChild(bboxCanvas);
   content.innerHTML = '';
   content.appendChild(wrapper);
+  state.totalPages = 1;
+  updatePageInfo();
+}
+
+function loadOriginalFileFallback(url, filename) {
+  const content = document.getElementById('viewerContent');
+  content.innerHTML = `
+    <div style="width:min(100%,980px); background:#fff; border:1px solid var(--border); border-radius:10px; padding:18px;">
+      <h3 style="font-size:14px;margin-bottom:8px;">Original file preview is not supported in browser</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px;">File: ${escHtml(filename)}</p>
+      <a href="${url}" target="_blank" style="font-size:12px;color:#1d4ed8;text-decoration:none;">Open original file in new tab</a>
+    </div>`;
   state.totalPages = 1;
   updatePageInfo();
 }
@@ -432,6 +472,9 @@ function switchTab(tab) {
   state.tab = tab;
   document.getElementById('tabDoc').classList.toggle('active', tab === 'doc');
   document.getElementById('tabKb').classList.toggle('active', tab === 'kb');
+  if (tab === 'doc') {
+    state.kbChatId = null;
+  }
   renderChat();
 }
 
@@ -447,21 +490,23 @@ function renderChat() {
 }
 
 function renderMessage(m) {
-  if (m.role === 'user') {
-    return `<div class="msg"><div class="msg-user">${escHtml(m.content)}</div></div>`;
-  }
-  const chips = (m.retrieved_docs || []).map((d, i) => {
-    const color = LABEL_COLORS[d.label] || '#6b7280';
-    return `<span class="source-chip" onclick="focusSource(${JSON.stringify(d).replace(/"/g,'&quot;')})">
-      <span class="chip-label" style="background:${color}"></span>
-      p.${d.page} · ${d.label} · ${Math.round(d.score * 100)}%
-    </span>`;
-  }).join('');
-  return `<div class="msg msg-assistant">
-    <div class="msg-bubble">${escHtml(m.content)}</div>
-    ${chips ? `<div class="msg-sources">${chips}</div>` : ''}
-  </div>`;
-}
+   if (m.role === 'user') {
+     return `<div class="msg"><div class="msg-user">${escHtml(m.content)}</div></div>`;
+   }
+   const rows = (m.retrieved_docs || []).map((d, i) => {
+     const color = LABEL_COLORS[d.label] || '#6b7280';
+     return `<tr>
+       <td>${d.page}</td>
+       <td>${d.label}</td>
+       <td>${Math.round(d.score * 100)}%</td>
+       <td><button onclick="focusSource(${JSON.stringify(d).replace(/"/g,'&quot;')})" style="background:${color}22; color:${color}; border:none;">View</button></td>
+     </tr>`;
+   }).join('');
+   return `<div class="msg msg-assistant">
+     <div class="msg-bubble">${escHtml(m.content)}</div>
+     ${rows ? `<table class="source-table"><thead><tr><th>Page</th><th>Label</th><th>Score</th><th>Action</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+   </div>`;
+ }
 
 function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
@@ -492,18 +537,19 @@ async function sendMessage() {
   try {
     let url, body;
     if (state.tab === 'doc') {
-      url = `${API}/api/chat/document`;
-      body = { doc_id: state.activeDocId, messages: history.filter(m => m.role === 'user' || m.role === 'assistant'), k: 5 };
+      url = `${API}/api/pipeline/files/${state.activeDocId}/ask`;
+      body = { query: text, k: 5 };
     } else {
-      url = `${API}/api/chat/knowledge`;
-      body = { messages: history.filter(m => m.role === 'user' || m.role === 'assistant'), k: 5 };
+      url = state.kbChatId ? `${API}/api/knowledge/chats/${state.kbChatId}/messages` : `${API}/api/knowledge/chats`;
+      body = { query: text, k: 5 };
     }
 
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const data = await res.json();
 
     removeTyping();
-    const msg = { role: 'assistant', content: data.content, retrieved_docs: data.retrieved_docs || [] };
+    if (state.tab === 'kb' && data.chat_id) state.kbChatId = data.chat_id;
+    const msg = { role: 'assistant', content: data.answer || data.content || '', retrieved_docs: data.retrieved_docs || [] };
     history.push(msg);
     renderChat();
 

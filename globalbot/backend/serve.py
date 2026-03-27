@@ -15,8 +15,10 @@ os.environ.setdefault("TF_ENABLE_ONEDNN_OPTS", "0")
 
 def create_app(args: argparse.Namespace) -> FastAPI:
     from llms.factory import init_singletons
-    from api.routes.documents import router as doc_router
-    from api.routes.chat import router as chat_router
+    from globalbot.api.routes.documents import router as doc_router
+    from globalbot.api.routes.chat import router as chat_router
+    from globalbot.api.routes.pipeline import router as pipeline_router
+    from globalbot.api.routes.knowledge import router as knowledge_router
 
     init_singletons(
         mode=args.mode,
@@ -36,7 +38,9 @@ def create_app(args: argparse.Namespace) -> FastAPI:
     )
     app.include_router(doc_router)
     app.include_router(chat_router)
-
+    app.include_router(pipeline_router)
+    app.include_router(knowledge_router)
+    
     frontend = Path("./frontend")
     if frontend.exists():
         app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
